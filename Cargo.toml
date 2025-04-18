@@ -17,7 +17,7 @@ csv="1.1.6"
 flate2 = "1.0.24"
 differ = { git = "https://github.com/scfurl/differ" }
 itertools = "0.10.5"
-regex = "1"
+regex = "1.11.1"
 
 [[bin]]
 name = "mergebams"
