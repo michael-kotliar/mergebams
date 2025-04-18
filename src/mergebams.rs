@@ -58,26 +58,14 @@ extern crate itertools;
 
 use itertools::Itertools;
 use differ::{Differ, Tag};
-use flate2::GzBuilder;
-use flate2::Compression;
 use bam::RecordWriter;
 use bam::record::tags::TagValue;
 use clap::{App, load_yaml};
 use std::str;
-use flate2::{read};
-use std::{
-    // error::Error,
-    ffi::OsStr,
-    fs::File,
-    io::{self, BufReader, BufRead, Write},
-    path::Path,
-};
 
 
 struct Params {
     inputs: String,
-    labels: String,
-    bcs: String,
     out: String,
     threads: usize,
 }
@@ -87,13 +75,8 @@ fn main() {
     let params = load_params();
     // let header_result = checkheaders(params);
     if let Ok((header, params)) = checkheaders(params){
-        let params = addtags(params, header);
-        if params.bcs == "0"{
-            return;
-        } else {
-            let _result = lines_from_file(params);
-            return;
-        }
+        addtags(params, header);
+        return;
     }else{
         eprintln!("ERROR: BAM header sequences do not match - you will need to fix this before merging bams");
     }
@@ -101,54 +84,27 @@ fn main() {
 }
 
 
-fn load_params() -> Params {
-    let yaml = load_yaml!("params_mergebams.yml");
-    let params = App::from_yaml(yaml).get_matches();
-    let inputs = params.value_of("inputs").unwrap();
-    let labels = params.value_of("labels").unwrap();
-    let threads: usize = params.value_of("threads").unwrap_or("1").parse().unwrap();
-    let bcs = params.value_of("bcs").unwrap_or("0");
-    let out = params.value_of("out").unwrap();
-    Params{
-        inputs: inputs.to_string(),
-        labels: labels.to_string(),
-        bcs: bcs.to_string(),
-        out: out.to_string(),
-        threads: threads,
+fn sanitize_and_replace_cb(cb: &str, suffix: &str) -> String {
+    let re = regex::Regex::new(r"-\d+$").unwrap();
+    if re.is_match(cb) {
+        re.replace(cb, suffix).to_string()
+    } else {
+        format!("{}{}", cb, suffix)
     }
 }
 
 
-fn lines_from_file(params: Params) -> io::Result<()>{
-    let out_csv = params.out.to_string()+"/out_barcodes.tsv.gz";
-    let s1 = params.bcs.to_string();
-    let tsvvec = s1.split(",").collect::<Vec<&str>>();
-    let labvec1 = params.labels.to_string();
-    let labvec = labvec1.split(",").collect::<Vec<&str>>();
-    let f = File::create(out_csv)?;
-    let mut gz = GzBuilder::new()
-                    .filename("/out_barcodes.tsv.gz")
-                    .write(f, Compression::default());
-
-    for (pos, filename) in tsvvec.iter().enumerate() {
-        let path = Path::new(filename);
-        let file = match File::open(&path) {
-            Err(_why) => panic!("couldn't open {}", path.display()),
-            Ok(file) => file,
-        };
-        if path.extension() == Some(OsStr::new("gz")){
-            let buf = BufReader::new(read::GzDecoder::new(file));
-            for line in buf.lines(){
-                writeln!(&mut gz, "{}", labvec[pos].to_string() + &line.unwrap())?;
-            }
-        }else{
-            let buf = BufReader::new(file);
-            for line in buf.lines(){
-                writeln!(&mut gz, "{}", labvec[pos].to_string() + &line.unwrap())?;
-            }
-        }
+fn load_params() -> Params {
+    let yaml = load_yaml!("params_mergebams.yml");
+    let params = App::from_yaml(yaml).get_matches();
+    let inputs = params.value_of("inputs").unwrap();
+    let threads: usize = params.value_of("threads").unwrap_or("1").parse().unwrap();
+    let out = params.value_of("out").unwrap();
+    Params{
+        inputs: inputs.to_string(),
+        out: out.to_string(),
+        threads: threads,
     }
-    return Ok(());
 }
 
 
@@ -225,8 +181,6 @@ fn addtags(params: Params, header: bam::Header) -> Params{
     let inputs = params.inputs.to_string();
     let bam_vec = inputs.split(",").collect::<Vec<&str>>();
     let bam_vec_msg = inputs.split(",").join(" and ");
-    let labels = params.labels.to_string();
-    let lab_vec = labels.split(",").collect::<Vec<&str>>();
     let (read_threads, write_threads) = if (*&params.threads as i8) > 2{
         (((*&params.threads/2) -1) as u16, ((*&params.threads/2) -1) as u16)
     } else {
@@ -247,26 +201,23 @@ fn addtags(params: Params, header: bam::Header) -> Params{
     eprintln!("Headers ok\nWriting:\n\n{}\nfrom:\n\n{}\n", out_bam_msg, bam_vec_msg);
     for (pos, inbam) in bam_vec.iter().enumerate() {
         let reader = bam::BamReader::from_path(inbam.to_string(), read_threads).unwrap();
+        let suffix = format!("-{}", pos + 1);
         for record in reader {
             let mut newrecord = record.as_ref().unwrap().clone();
             match record.unwrap().tags().get(b"CB") {
                 Some(TagValue::String(array_view, _)) => {
-                    let labstr = lab_vec[pos];
-                    let preftag = labstr.as_bytes().to_vec();
-                    let oldtag = array_view.to_vec();
-                    let new_cb = &[preftag, oldtag].concat();
+                    let cb_str = String::from_utf8_lossy(array_view.as_ref()).to_string();
+                    let new_cb = sanitize_and_replace_cb(&cb_str, &suffix);
                     newrecord.tags_mut().remove(b"CB");
-                    newrecord.tags_mut().push_string(b"CB", &new_cb);
+                    newrecord.tags_mut().push_string(b"CB", new_cb.as_bytes());
                     pass_writer.write(&newrecord).unwrap();
                     pass_count+=1;
                 },
                 Some(TagValue::Char(value)) => {
-                    let labstr = lab_vec[pos];
-                    let preftag = labstr.as_bytes().to_vec();
-                    let oldtag = value.to_string().as_bytes().to_vec();
-                    let new_cb = &[preftag, oldtag].concat();
+                    let cb_str = value.to_string();
+                    let new_cb = sanitize_and_replace_cb(&cb_str, &suffix);
                     newrecord.tags_mut().remove(b"CB");
-                    newrecord.tags_mut().push_string(b"CB", &new_cb);
+                    newrecord.tags_mut().push_string(b"CB", new_cb.as_bytes());
                     pass_writer.write(&newrecord).unwrap();
                     other_count+=1;
                 },
@@ -281,5 +232,3 @@ fn addtags(params: Params, header: bam::Header) -> Params{
     eprintln!("Processed all reads!!\nFound:\n{} - reads PASSING\n{} - reads PASSING but with issues\n{} - reads FAILING", pass_count, other_count, fail_count);
     return params;
 }
-    
-
