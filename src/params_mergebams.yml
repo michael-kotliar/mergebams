@@ -9,21 +9,15 @@ args:
         takes_value: true
         required: true
         help: input bams, comma-separated
+    - out:
+        long: out
+        short: o
+        takes_value: true
+        required: true
+        help: merged BAM filename (for example, possorted_genome_bam.bam)
     - threads:
         long: threads
         short: t
         takes_value: true
         required: false
         help: threads
-    - out:
-        long: out
-        short: o
-        takes_value: true
-        required: false
-        help: folder for output (merged_bam.bam, merged_bcs.tsv.gz)
-    - celltag:
-        long: celltag
-        short: c
-        takes_value: false
-        required: false
-        help: set if cell barcode tag should not be CB

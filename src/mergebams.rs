@@ -1,53 +1,3 @@
-
-/**
-version 0.3
-
-
-*********create test files*********
-
-cd ~/develop/mergebams
-cargo build --release
-ml SAMtools
-samtools view -b -h -s 0.0001 /home/sfurlan/scratch/MRB2/ITS_D383_3/outs/per_sample_outs/ITS_D383_3/count/sample_alignments.bam > ~/develop/mergebams/test/bam1.bam
-samtools view -b -h -s 0.0001 /home/sfurlan/scratch/MRB2/ITS_D544_3/outs/per_sample_outs/ITS_D544_3/count/sample_alignments.bam > ~/develop/mergebams/test/bam2.bam
-samtools view -b -h -s 0.0001 /home/sfurlan/scratch/MRB2/ITS_D544_3/outs/per_sample_outs/ITS_D544_3/count/sample_alignments.bam > ~/develop/mergebams/test/bam3.bam
-samtools view -b -h -s 0.0001 /home/sfurlan/scratch/NB1/AML_601_34/outs/per_sample_outs/AML_601_34/count/sample_alignments.bam > ~/develop/mergebams/test/bam4.bam
-
-
-head /home/sfurlan/scratch/MRB2/ITS_D544_3/outs/per_sample_outs/ITS_D544_3/count/sample_barcodes.csv
-
-************************************
-
-
-*********installation of mergebams*************
-* 
-* 
-* *********************************************
-
-*********usage of mergebams*********
-
-cd ~/develop/mergebams/test
-cargo build --release
-ls../target/release/mergebams -i bam1.bam,bam2.bam -l test1_,test2_ -b barcodes1.tsv.gz,barcodes2.tsv.gz -o .
-../target/release/mergebams -i bam2.bam,bam3.bam -l test1_,test2_ -b barcodes1.tsv.gz,barcodes2.tsv.gz -o .
-../target/release/mergebams -i bam3.bam,bam4.bam -l test1_,test2_ -b barcodes1.tsv.gz,barcodes2.tsv.gz -o .
-../target/release/mergebams -i bam1.bam,bam2.bam,bam3.bam,bam4.bam -l test1_,test2_,test3_,test4_ -b barcodes1.tsv.gz,barcodes2.tsv.gz,barcodes3.tsv.gz,barcodes4.tsv.gz -o .
-../target/release/mergebams -i bam1.bam,bam2.bam,bam3.bam -l test1_,test2_,test3_ -b barcodes1.tsv.gz,barcodes2.tsv.gz,barcodes3.tsv.gz -o .
-
-
-zcat < out_barcodes.tsv.gz
-samtools view out_bam.bam | head -n 200
-samtools sort out_bam.bam > out_bam.sorted.bam
-samtools view out_bam.sorted.bam | head -n 200
-
-
-
-************************************
-
-
-**/
-
-
 extern crate simple_log;
 extern crate clap;
 extern crate bam;
@@ -62,6 +12,7 @@ use bam::RecordWriter;
 use bam::record::tags::TagValue;
 use clap::{App, load_yaml};
 use std::str;
+use std::process::Command;
 
 
 struct Params {
@@ -73,7 +24,6 @@ struct Params {
 
 fn main() {
     let params = load_params();
-    // let header_result = checkheaders(params);
     if let Ok((header, params)) = checkheaders(params){
         addtags(params, header);
         return;
@@ -103,7 +53,7 @@ fn load_params() -> Params {
     Params{
         inputs: inputs.to_string(),
         out: out.to_string(),
-        threads: threads,
+        threads: threads
     }
 }
 
@@ -149,38 +99,13 @@ fn make_new_header(bam_vec: Vec<&str>) -> bam::Header {
     let mut out_header = hreader.header().clone();
     let mergebam_line = bam_vec.join(", ");
     let _msg = out_header.push_line(&("@CO\tmergebams has included the BAM records from the following files (using the header from the first): ".to_owned()+&mergebam_line));
-
-    // for (pos, inbam) in bam_vec.iter().enumerate()  {
-    //     // let hreader = bam::BamReader::from_path(inbam, 0).unwrap();
-    //     // let header = hreader.header();
-    //     // eprintln!("{}, {}", pos, inbam);
-    //     let hreader = bam::BamReader::from_path(inbam, 0).unwrap();
-    //     let header = hreader.header();
-    //     eprintln!("{:?}", header.reference_names());
-    //     // if pos == 0 {
-    //     //     let mut hreader = std::io::Read::read(in_bam).unwrap();
-    //     //     out_header = bam::Header::from_bam(& mut hreader).unwrap();
-    //     //     // for line in header.lines() {
-    //     //     //     eprintln!("{:?}", line);
-    //     //     // }
-    //     //     // let mut header_line = HeaderEntry::header_line("1.6".to_string());
-    //     //     // header_line.push(b"SO", "Coordinate".to_string());
-    //     //     // header.push_entry(header_line).unwrap();
-    //     //     // // Reference line       "@SQ  SN:chr1  LN:10000".
-    //     //     // header.push_entry(HeaderEntry::ref_sequence("chr1".to_string(), 10000)).unwrap();
- 
-    //     // }
-    // }
     return out_header;
 }
 
 fn addtags(params: Params, header: bam::Header) -> Params{
-    let out_bam = params.out.to_string()+"/out_bam.bam";
-    let fail_bam = params.out.to_string()+"/fail_bam.bam";
-    let out_bam_msg = out_bam.clone();
+    let out_bam = "temp.bam";
     let inputs = params.inputs.to_string();
     let bam_vec = inputs.split(",").collect::<Vec<&str>>();
-    let bam_vec_msg = inputs.split(",").join(" and ");
     let (read_threads, write_threads) = if (*&params.threads as i8) > 2{
         (((*&params.threads/2) -1) as u16, ((*&params.threads/2) -1) as u16)
     } else {
@@ -189,16 +114,11 @@ fn addtags(params: Params, header: bam::Header) -> Params{
     let mut fail_count = 0;
     let mut pass_count = 0;
     let mut other_count = 0;
-    // let hreader = bam::BamReader::from_path(bam_vec[0], read_threads).unwrap();
     let mut pass_writer = bam::BamWriter::build()
         .write_header(true)
         .additional_threads(write_threads)
         .from_path(out_bam, header.clone()).unwrap();
-    let mut fail_writer = bam::BamWriter::build()
-        .write_header(true)
-        .additional_threads(0)
-        .from_path(fail_bam, header.clone()).unwrap();
-    eprintln!("Headers ok\nWriting:\n\n{}\nfrom:\n\n{}\n", out_bam_msg, bam_vec_msg);
+
     for (pos, inbam) in bam_vec.iter().enumerate() {
         let reader = bam::BamReader::from_path(inbam.to_string(), read_threads).unwrap();
         let suffix = format!("-{}", pos + 1);
@@ -222,13 +142,28 @@ fn addtags(params: Params, header: bam::Header) -> Params{
                     other_count+=1;
                 },
                 _ => {
-                    // eprintln!("ERROR: 'CB' not found");
-                    fail_writer.write(&newrecord).unwrap();
                     fail_count+=1;
                 }
             }
         }
     }
     eprintln!("Processed all reads!!\nFound:\n{} - reads PASSING\n{} - reads PASSING but with issues\n{} - reads FAILING", pass_count, other_count, fail_count);
+
+    let status = Command::new("samtools")
+        .args(&["sort", "-@", &params.threads.to_string(), "-o", &params.out.to_string(), "temp.bam"])
+        .status()
+        .expect("Failed to sort BAM file");
+    if !status.success() {
+        panic!("samtools sort failed");
+    }
+
+    let status = Command::new("samtools")
+        .args(&["index", "-@", &params.threads.to_string(), "-o", &params.out.to_string()])
+        .status()
+        .expect("Failed to sort BAM file");
+    if !status.success() {
+        panic!("samtools index failed");
+    }
+
     return params;
 }
