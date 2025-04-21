@@ -140,7 +140,7 @@ fn process_bams(params: Params, header: bam::Header) -> Params{
             }
         }
     }
-    pass_writer.finish()?;
+    let _ = pass_writer.finish();
     eprintln!("Processed all reads!!\nFound:\n{} - reads PASSING\n{} - reads PASSING but with issues\n{} - reads FAILING", pass_count, other_count, fail_count);
 
     let status = Command::new("samtools")
