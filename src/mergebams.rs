@@ -17,22 +17,19 @@ use std::process::Command;
 
 struct Params {
     inputs: String,
-    out: String,
+    output: String,
     threads: usize,
 }
-
 
 fn main() {
     let params = load_params();
     if let Ok((header, params)) = checkheaders(params){
-        addtags(params, header);
+        process_bams(params, header);
         return;
     }else{
-        eprintln!("ERROR: BAM header sequences do not match - you will need to fix this before merging bams");
+        eprintln!("BAM header sequences do not match. Exiting.");
     }
-
 }
-
 
 fn sanitize_and_replace_cb(cb: &str, suffix: &str) -> String {
     let re = regex::Regex::new(r"-\d+$").unwrap();
@@ -43,20 +40,18 @@ fn sanitize_and_replace_cb(cb: &str, suffix: &str) -> String {
     }
 }
 
-
 fn load_params() -> Params {
     let yaml = load_yaml!("params_mergebams.yml");
     let params = App::from_yaml(yaml).get_matches();
     let inputs = params.value_of("inputs").unwrap();
     let threads: usize = params.value_of("threads").unwrap_or("1").parse().unwrap();
-    let out = params.value_of("out").unwrap();
+    let output = params.value_of("output").unwrap();
     Params{
         inputs: inputs.to_string(),
-        out: out.to_string(),
+        output: output.to_string(),
         threads: threads
     }
 }
-
 
 fn checkheaders(params: Params) -> Result<(bam::Header, Params), &'static str>{
     let inputs = params.inputs.to_string();
@@ -90,11 +85,9 @@ fn checkheaders(params: Params) -> Result<(bam::Header, Params), &'static str>{
     } else {
         return Err("Discrepent headers")
     }
-    
 }
 
 fn make_new_header(bam_vec: Vec<&str>) -> bam::Header {
-    // assumes no discrepencies in the headers across bams in bam_vec
     let hreader = bam::BamReader::from_path(bam_vec[0], 0).unwrap();
     let mut out_header = hreader.header().clone();
     let mergebam_line = bam_vec.join(", ");
@@ -102,8 +95,8 @@ fn make_new_header(bam_vec: Vec<&str>) -> bam::Header {
     return out_header;
 }
 
-fn addtags(params: Params, header: bam::Header) -> Params{
-    let out_bam = "temp.bam";
+fn process_bams(params: Params, header: bam::Header) -> Params{
+    let out_bam = "_temp.bam";
     let inputs = params.inputs.to_string();
     let bam_vec = inputs.split(",").collect::<Vec<&str>>();
     let (read_threads, write_threads) = if (*&params.threads as i8) > 2{
@@ -150,17 +143,17 @@ fn addtags(params: Params, header: bam::Header) -> Params{
     eprintln!("Processed all reads!!\nFound:\n{} - reads PASSING\n{} - reads PASSING but with issues\n{} - reads FAILING", pass_count, other_count, fail_count);
 
     let status = Command::new("samtools")
-        .args(&["sort", "-@", &params.threads.to_string(), "-o", &params.out.to_string(), "temp.bam"])
+        .args(&["sort", "-@", &params.threads.to_string(), "-o", &params.output.to_string(), "_temp.bam"])
         .status()
-        .expect("Failed to sort BAM file");
+        .expect("samtools not found");
     if !status.success() {
         panic!("samtools sort failed");
     }
 
     let status = Command::new("samtools")
-        .args(&["index", "-@", &params.threads.to_string(), "-o", &params.out.to_string()])
+        .args(&["index", "-@", &params.threads.to_string(), &params.output.to_string()])
         .status()
-        .expect("Failed to sort BAM file");
+        .expect("samtools not found");
     if !status.success() {
         panic!("samtools index failed");
     }

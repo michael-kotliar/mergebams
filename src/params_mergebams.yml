@@ -1,23 +1,20 @@
 name: mergebams
 version: "0.3"
 author: scott furlan <scfurl@users.noreply.github.com>
-about: Merge sam/bam files with intelligent cell barcode preservation. This has been tested on bam file and tsv output from the 10X Genomics Cellranger program. The implementation of mergeBams was motivated by and primarily designed for working with Cellranger output.
+about: Merges 10x generaded BAM files.
 args:
     - inputs:
         long: inputs
-        short: i
         takes_value: true
         required: true
-        help: input bams, comma-separated
-    - out:
-        long: out
-        short: o
+        help: Input bam files, comma-separated list.
+    - output:
+        long: output
         takes_value: true
         required: true
-        help: merged BAM filename (for example, possorted_genome_bam.bam)
+        help: Name for the merged BAM file.
     - threads:
         long: threads
-        short: t
         takes_value: true
         required: false
-        help: threads
+        help: Number of threads to be used when sorting and indexing.
