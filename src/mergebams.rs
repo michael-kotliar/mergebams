@@ -12,6 +12,7 @@ use bam::RecordWriter;
 use bam::record::tags::TagValue;
 use clap::{App, load_yaml};
 use std::str;
+use std::fs;
 use std::process::Command;
 
 
@@ -158,6 +159,8 @@ fn process_bams(params: Params, header: bam::Header) -> Params{
     if !status.success() {
         panic!("samtools index failed");
     }
+
+    let _ = fs::remove_file("_temp.bam");
 
     return params;
 }
